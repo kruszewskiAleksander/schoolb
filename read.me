@@ -1,12 +1,4 @@
-# SchoolBackupDaemon
-
-Program robi kolejne kopie plików wrzucanych do szkolnego folderu wymiany i przygotowuje raport HTML dla administratora. Działa w tle na serwerze z Linuksem, na którym folder jest udostępniany przez Sambę lub SFTP.
-
-Masz gotową paczkę z pendrive'a? Zacznij od `START_TUTAJ.txt` w folderze `dist/school-backup` lub w rozpakowanej paczce. Są tam krótkie polecenia do testu i instalacji. Poniżej znajdziesz pełną instrukcję: od sprawdzenia Javy po uruchomienie usługi systemd.
-
-Polecenia wpisuj w Bash na serwerze, z konta administratora z dostępem do `sudo`. Do uruchomienia gotowego JAR-a wystarczy Java 17 lub nowsza. JDK z kompilatorem jest potrzebny dopiero wtedy, gdy chcesz samodzielnie zbudować program ze źródeł.
-
-## 1. Sprawdź serwer i Javę
+1. Sprawdź serwer i Javę
 
 Na początek sprawdź, jaki system i jaką Javę masz na serwerze:
 
@@ -26,8 +18,6 @@ Program potrzebuje:
 - Lokalnego systemu plików z uprawnieniami POSIX i obsługą `SecureDirectoryStream`, np. typowej instalacji ext4/XFS. Program sprawdza te możliwości przy starcie.
 
 Folder wymiany powinien leżeć na tym serwerze. Zmiany wykonane na innym serwerze w zamontowanym udziale CIFS/NFS mogą nie docierać do inotify. Więcej w [dokumentacji inotify](https://man7.org/linux/man-pages/man7/inotify.7.html).
-
-Jeśli brakuje Javy lub chcesz kompilować źródła, zainstaluj JDK. Wybierz polecenia dla swojej dystrybucji.
 
 Debian/Ubuntu:
 
@@ -61,7 +51,7 @@ java -version
 javac -version
 ```
 
-Pakiet dla RHEL jest opisany w [dokumentacji Red Hat](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/9.5_release_notes/new-features). Na Fedorze nazwa pakietu może być inna. Dostępne pakiety JDK sprawdzisz tak:
+Pakiet dla RHEL jest opisany w [dokumentacji Red Hat](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/9.5_release_notes/new-features). Na Fedorze nazwa pakietu może być inna. Dostępne pakiety JDK:
 
 ```bash
 dnf list --available '*openjdk*devel*'
@@ -69,9 +59,9 @@ dnf list --available '*openjdk*devel*'
 
 Na pozostałych dystrybucjach zainstaluj JDK 17+ i Bash ze swojego menedżera pakietów. Dalej kroki są takie same. Jeśli `java` w terminalu i `/usr/bin/java` wskazują na różne wersje, popraw ścieżkę `ExecStart` w punkcie 6.
 
-## 2. Zbuduj program ze źródeł
+2. Zbuduj program ze źródeł
 
-Ten krok możesz pominąć, jeśli korzystasz z gotowych JAR-ów z paczki. Do samodzielnej kompilacji skopiuj `SchoolBackupDaemon.java` i `SchoolBackupDaemonTest.java` do swojego katalogu roboczego, poza folderem uczniów. Przejdź do tego katalogu i wpisz:
+Ten krok możesz pominąć, jeśli korzystasz z gotowych JAR-ów z paczki:
 
 ```bash
 mkdir -p build-linux/app build-linux/tests
@@ -89,7 +79,7 @@ jar --list --file build-linux/school-backup.jar
 
 Na liście powinien być `SchoolBackupDaemon.class` oraz klasy z nazwami zaczynającymi się od `SchoolBackupDaemon$`. Wszystkie są potrzebne do działania programu.
 
-## 3. Uruchom testy
+3. Uruchom testy
 
 W gotowej paczce wystarczy `bash test.sh`. Jeśli kompilujesz program samodzielnie, wykonaj poniższe polecenia z tego samego katalogu co wcześniej, bez `sudo`:
 
@@ -105,7 +95,7 @@ Na końcu powinno pojawić się `PASS: ... assertions`. Liczba sprawdzeń zależ
 
 Jeśli test kończy się `AssertionError`, `Timeout` albo błędem POSIX, zajrzyj do punktu 9 i rozwiąż problem przed uruchomieniem programu na folderze uczniów.
 
-## 4. Wypróbuj program w terminalu
+4. Wypróbuj program w terminalu
 
 Możesz też zobaczyć działanie programu bez instalowania usługi. Przygotuj pusty folder próbny i uruchom program w pierwszym terminalu. Poniższy przykład korzysta z JAR-a zbudowanego w punkcie 2. Jeśli używasz paczki, zamień `build-linux/school-backup.jar` na `school-backup.jar`.
 
@@ -142,7 +132,7 @@ Powinny powstać dwie kopie: z pierwszą i z drugą treścią pliku. Katalogi ar
 
 Gdy skończysz, naciśnij `Ctrl+C` w pierwszym terminalu. Folder próbny zostaje na dysku, więc możesz jeszcze obejrzeć jego zawartość i później go usunąć.
 
-## 5. Przygotuj foldery i uprawnienia
+5. Przygotuj foldery i uprawnienia
 
 W tym przykładzie uczniowie korzystają z istniejącego folderu:
 
@@ -180,7 +170,7 @@ Udział Samby powinien wskazywać na `szkola_wymiana`. Archiwum i raporty zostaw
 
 Usługa poniżej działa jako root z ograniczonymi uprawnieniami systemowymi. Dzięki temu może odczytywać pliki różnych właścicieli i przywracać ich czas dostępu (`atime`). Samo prawo odczytu przez ACL nie wystarcza do ustawiania tego czasu w cudzych plikach — szczegóły są w [opisie utimensat](https://man7.org/linux/man-pages/man2/utimensat.2.html).
 
-## 6. Uruchom jako usługę systemd
+6. Uruchom jako usługę systemd
 
 Wklej poniższy blok, żeby utworzyć `/etc/systemd/system/school-backup.service`. Jeśli ten plik już istnieje, najpierw porównaj ustawienia, żeby nie stracić lokalnych zmian.
 
@@ -246,7 +236,7 @@ sudo systemctl is-enabled school-backup.service
 
 `Restart=on-failure` uruchomi proces ponownie po awarii. Gdy program nadal działa, ale zgłasza np. brak miejsca, trzeba rozwiązać przyczynę błędu. Zachowanie restartów opisuje [systemd.service](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html).
 
-## 7. Logi, raport i zatrzymywanie
+7. Logi, raport i zatrzymywanie
 
 Logi na żywo:
 
@@ -295,7 +285,7 @@ Raport zostaw do użytku administratora, poza udziałami uczniów i publicznym W
 
 W tym projekcie sprawdzono kompilację dla Javy 17 i 48 sprawdzeń na Windows. Testów integracyjnych Linuksa ani usługi systemd nie wykonano w tym środowisku. Przed użyciem na szkolnych plikach uruchom testy na swoim serwerze i sprawdź prawdziwy udział SMB/SFTP.
 
-## 9. Jeśli coś nie działa
+9. Jeśli coś nie działa
 
 **Brak SecureDirectoryStream lub POSIX.** Sprawdź system plików i używaną Javę. CIFS, FAT i niektóre systemy FUSE mogą nie zapewniać wymaganych możliwości.
 
