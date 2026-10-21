@@ -1,0 +1,9 @@
+* text=auto
+*.java text eol=lf
+*.sh text eol=lf
+*.txt text eol=lf
+*.me text eol=lf
+*.service.in text eol=lf
+SHA256SUMS text eol=lf
+*.jar binary
+*.zip binary
