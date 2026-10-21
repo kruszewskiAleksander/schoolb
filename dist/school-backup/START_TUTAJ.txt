@@ -1,0 +1,65 @@
+PACZKA NA PENDRIVE — SCHOOL BACKUP
+
+1. Skopiuj school-backup-pendrive.zip na pendrive.
+2. Na serwerze skopiuj ZIP do prywatnego katalogu administratora i rozpakuj.
+   Nie uruchamiaj programu bezpośrednio z pendrive ani z udziału uczniów.
+
+   unzip school-backup-pendrive.zip
+   cd school-backup
+
+   Jeśli nie masz unzip, możesz wcześniej rozpakować ZIP w Windows i skopiować
+   cały folder school-backup na pendrive, a później do katalogu administratora.
+
+3. W terminalu Linux sprawdź pliki i uruchom test:
+
+   sha256sum -c SHA256SUMS
+   bash test.sh
+
+   Potrzebna jest Java 17 lub nowsza. Gotowe pliki JAR są w paczce, więc
+   kompilator nie jest potrzebny do testu ani instalacji. Paczka nie zawiera
+   środowiska Java. Gdy Java jest już zainstalowana, nie potrzebujesz Internetu.
+   Gdy jej brakuje, instrukcję instalacji znajdziesz w read.me.
+
+4. Po wyniku PASS zainstaluj program i jednostkę systemd:
+
+   sudo bash install.sh
+
+   Domyślny ISTNIEJĄCY folder wymiany: /home/serwer/szkola_wymiana
+   Domyślne prywatne archiwum: /home/serwer/.backup_archiwum
+   Domyślny prywatny folder raportów: /home/serwer/.raporty
+
+   Możesz podać własne trzy ścieżki:
+
+   sudo bash install.sh /srv/szkola/wymiana /srv/szkola/.archiwum /srv/szkola/.raporty
+
+   Instalator obsługuje ścieżki absolutne zawierające litery ASCII, cyfry,
+   kropki, podkreślenia, myślniki i ukośniki. Dla innych ścieżek użyj ręcznej
+   instrukcji read.me i dostosuj cytowanie w jednostce systemd.
+
+   Instalator nie zmienia uprawnień istniejącego folderu wymiany, nie uruchamia
+   usługi i nie nadpisuje istniejącej instalacji. Nie konfiguruje Samby/SFTP.
+
+5. Uruchom usługę i obejrzyj logi:
+
+   sudo systemctl start school-backup.service
+   sudo systemctl status school-backup.service --no-pager
+   sudo journalctl -u school-backup.service -n 80 --no-pager
+
+   Prześlij mały plik przez rzeczywiste SMB/SFTP, sprawdź kopię, zmień zawartość
+   i sprawdź drugą wersję. Samo active (running) nie potwierdza poprawności kopii.
+
+6. Po udanym teście produkcyjnego udziału włącz start po restarcie:
+
+   sudo systemctl enable school-backup.service
+
+Zatrzymanie:
+
+   sudo systemctl stop school-backup.service
+
+Pełna instrukcja, ręczny test, wymagania i ograniczenia: read.me.
+Źródła Java znajdują się obok JAR; możesz skompilować je samodzielnie.
+
+Nie ma gwarancji działania bez testu na docelowym serwerze. Przenośny JAR
+wymaga zgodnej JVM, a usługa wymaga Linuksa, POSIX i systemd. Nie zawiera
+retencji kopii; archiwum rośnie. Po restarcie program tworzy ponownie kopie
+bieżących plików. Przywracanie atime nie usuwa ctime ani audytu SMB/SFTP.

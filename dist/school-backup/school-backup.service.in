@@ -1,0 +1,33 @@
+[Unit]
+Description=School file snapshots and administrator reports
+After=local-fs.target
+RequiresMountsFor=@SOURCE@ @ARCHIVE@ @REPORTS@
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/school-backup
+ExecStart=@JAVA@ -Xms32m -Xmx512m -XX:+ExitOnOutOfMemoryError -Dbackup.workers=2 -Dbackup.reserveMiB=256 -Dbackup.rescanSeconds=300 -Dbackup.zone=Europe/Warsaw -jar /opt/school-backup/school-backup.jar @SOURCE@ @ARCHIVE@ @REPORTS@ 3600
+Restart=on-failure
+RestartSec=5s
+SuccessExitStatus=143
+TimeoutStopSec=90s
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=school-backup
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_FOWNER
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths=@SOURCE@ @ARCHIVE@ @REPORTS@
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target
