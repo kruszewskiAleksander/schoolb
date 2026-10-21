@@ -1,10 +1,14 @@
-# SchoolBackupDaemon — wdrożenie na Linuksie
+# SchoolBackupDaemon
 
-Instrukcja dotyczy plików SchoolBackupDaemon.java i SchoolBackupDaemonTest.java z tego projektu. Komendy wykonuj w Bash na docelowym serwerze, z konta administratora mającego sudo. Kopiuj zawartość bloków poleceń, bez znaczników ```.
+Program robi kolejne kopie plików wrzucanych do szkolnego folderu wymiany i przygotowuje raport HTML dla administratora. Działa w tle na serwerze z Linuksem, na którym folder jest udostępniany przez Sambę lub SFTP.
 
-Nie ma gwarancji działania na nieznanym serwerze. Potwierdzono kompilację zgodną z Java 17 i 48 sprawdzeń na Windows. Testy integracyjne Linuksa oraz systemd trzeba wykonać na docelowym systemie. Sama nazwa dystrybucji nie wystarcza: znaczenie mają JDK, system plików, uprawnienia i konfiguracja usługi.
+Masz gotową paczkę z pendrive'a? Zacznij od `START_TUTAJ.txt` w folderze `dist/school-backup` lub w rozpakowanej paczce. Są tam krótkie polecenia do testu i instalacji. Poniżej znajdziesz pełną instrukcję: od sprawdzenia Javy po uruchomienie usługi systemd.
 
-## 1. Sprawdzenie serwera
+Polecenia wpisuj w Bash na serwerze, z konta administratora z dostępem do `sudo`. Do uruchomienia gotowego JAR-a wystarczy Java 17 lub nowsza. JDK z kompilatorem jest potrzebny dopiero wtedy, gdy chcesz samodzielnie zbudować program ze źródeł.
+
+## 1. Sprawdź serwer i Javę
+
+Na początek sprawdź, jaki system i jaką Javę masz na serwerze:
 
 ```bash
 cat /etc/os-release
@@ -15,14 +19,15 @@ java -version
 javac -version
 ```
 
-Wymagania:
+Program potrzebuje:
 
-- Linux i JDK 17 lub nowszy; potrzebne są java, javac oraz jar.
-- Dla opisanej usługi proces PID 1 powinien być systemd. Na systemie z OpenRC/runit można wykonać test ręczny, ale potrzebna będzie inna konfiguracja usługi.
-- Lokalny system plików z uprawnieniami POSIX i obsługą SecureDirectoryStream, np. typowa instalacja ext4/XFS. Program sam sprawdza wymagane mechanizmy przy uruchomieniu.
-- Monitorujemy lokalny folder serwera udostępniony przez Sambę/SFTP. Nie zakładamy poprawnego wykrywania zmian wykonanych na innym serwerze przez zamontowany udział CIFS/NFS. Ograniczenie dotyczy inotify: [dokumentacja inotify](https://man7.org/linux/man-pages/man7/inotify.7.html).
+- Linuksa i Javy w wersji co najmniej 17. Do kompilacji przydadzą się też `javac` i `jar`.
+- Systemd, jeśli ma działać jako usługa według tej instrukcji. W wyniku polecenia `ps` powinno pojawić się `systemd`. Na OpenRC lub runit możesz przetestować program ręcznie, ale usługę trzeba skonfigurować osobno.
+- Lokalnego systemu plików z uprawnieniami POSIX i obsługą `SecureDirectoryStream`, np. typowej instalacji ext4/XFS. Program sprawdza te możliwości przy starcie.
 
-Instalacja JDK — wybierz wariant swojej dystrybucji.
+Folder wymiany powinien leżeć na tym serwerze. Zmiany wykonane na innym serwerze w zamontowanym udziale CIFS/NFS mogą nie docierać do inotify. Więcej w [dokumentacji inotify](https://man7.org/linux/man-pages/man7/inotify.7.html).
+
+Jeśli brakuje Javy lub chcesz kompilować źródła, zainstaluj JDK. Wybierz polecenia dla swojej dystrybucji.
 
 Debian/Ubuntu:
 
@@ -33,13 +38,13 @@ java -version
 javac -version
 ```
 
-Obie wersje muszą mieć numer główny co najmniej 17. Jeżeli domyślny pakiet na starszym wydaniu daje Java 11, sprawdź dostępność JDK 17:
+Sprawdź wynik `java -version` i `javac -version`: potrzebujesz wersji 17 lub nowszej. Jeśli po instalacji nadal widzisz Javę 11, sprawdź, czy repozytorium ma pakiet JDK 17:
 
 ```bash
 apt-cache policy openjdk-17-jdk-headless
 ```
 
-Jeśli pakiet ma dostępną wersję Candidate, zainstaluj go i wybierz właściwe narzędzia:
+Jeśli przy `Candidate` widzisz numer wersji, możesz go zainstalować. Potem wybierz tę wersję dla każdego narzędzia:
 
 ```bash
 sudo apt install openjdk-17-jdk-headless
@@ -56,17 +61,17 @@ java -version
 javac -version
 ```
 
-Pakiet dla RHEL opisuje [dokumentacja Red Hat](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/9.5_release_notes/new-features). Na Fedorze lub innym wydaniu nazwy dostępnych JDK mogą być inne; wyszukaj pakiet developerski OpenJDK w wersji 17 lub nowszej:
+Pakiet dla RHEL jest opisany w [dokumentacji Red Hat](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/9.5_release_notes/new-features). Na Fedorze nazwa pakietu może być inna. Dostępne pakiety JDK sprawdzisz tak:
 
 ```bash
 dnf list --available '*openjdk*devel*'
 ```
 
-Na innej dystrybucji zainstaluj jej pakiet JDK 17+ i Bash. Dalsza kompilacja jest taka sama. Jeżeli java uruchamiana w terminalu i /usr/bin/java mają różne wersje, popraw ścieżkę ExecStart w punkcie 6.
+Na pozostałych dystrybucjach zainstaluj JDK 17+ i Bash ze swojego menedżera pakietów. Dalej kroki są takie same. Jeśli `java` w terminalu i `/usr/bin/java` wskazują na różne wersje, popraw ścieżkę `ExecStart` w punkcie 6.
 
-## 2. Kompilacja i pakowanie
+## 2. Zbuduj program ze źródeł
 
-Skopiuj oba pliki .java do prywatnego katalogu roboczego administratora na serwerze. Przejdź do tego katalogu. Nie kompiluj w folderze uczniów. Wykonaj:
+Ten krok możesz pominąć, jeśli korzystasz z gotowych JAR-ów z paczki. Do samodzielnej kompilacji skopiuj `SchoolBackupDaemon.java` i `SchoolBackupDaemonTest.java` do swojego katalogu roboczego, poza folderem uczniów. Przejdź do tego katalogu i wpisz:
 
 ```bash
 mkdir -p build-linux/app build-linux/tests
@@ -74,7 +79,7 @@ javac --release 17 -encoding UTF-8 -Xlint:all -Werror \
   -d build-linux/app SchoolBackupDaemon.java
 ```
 
-Przejdź dalej tylko po zakończeniu kompilacji bez błędów. Opcja --release 17 ogranicza kod wynikowy i dostępne API do Java 17: [dokumentacja javac](https://docs.oracle.com/en/java/javase/17/docs/specs/man/javac.html).
+Opcja `--release 17` pozwala zbudować program dla Javy 17 także nowszym kompilatorem ([dokumentacja javac](https://docs.oracle.com/en/java/javase/17/docs/specs/man/javac.html)). Jeśli kompilator nie zgłosi błędów, utwórz JAR:
 
 ```bash
 jar --create --file build-linux/school-backup.jar \
@@ -82,11 +87,11 @@ jar --create --file build-linux/school-backup.jar \
 jar --list --file build-linux/school-backup.jar
 ```
 
-JAR musi zawierać SchoolBackupDaemon.class oraz klasy SchoolBackupDaemon$....class. Nie wystarczy skopiowanie wyłącznie głównego pliku .class.
+Na liście powinien być `SchoolBackupDaemon.class` oraz klasy z nazwami zaczynającymi się od `SchoolBackupDaemon$`. Wszystkie są potrzebne do działania programu.
 
-## 3. Automatyczne testy na Linuksie
+## 3. Uruchom testy
 
-Uruchom z tego samego katalogu roboczego, jako zwykły administrator, bez sudo:
+W gotowej paczce wystarczy `bash test.sh`. Jeśli kompilujesz program samodzielnie, wykonaj poniższe polecenia z tego samego katalogu co wcześniej, bez `sudo`:
 
 ```bash
 javac --release 17 -encoding UTF-8 -Xlint:all -Werror \
@@ -94,15 +99,15 @@ javac --release 17 -encoding UTF-8 -Xlint:all -Werror \
 java -ea -cp build-linux/app:build-linux/tests SchoolBackupDaemonTest
 ```
 
-Test tworzy własny katalog tymczasowy w bieżącym katalogu, uruchamia osobny proces demona i sprząta swoje dane. Nie używa produkcyjnego folderu wymiany. Sprawdza m.in. nowe wersje, podkatalogi, transfer porcjami, historię po usunięciu źródła, uprawnienia, atime, raport HTML i blokadę drugiej instancji.
+Testy pracują we własnym katalogu tymczasowym i sprzątają po sobie. Sprawdzają tworzenie wersji, podkatalogi, przesyłanie pliku porcjami, zachowanie historii po usunięciu źródła, uprawnienia, przywracanie czasu dostępu i raport HTML.
 
-Oczekiwany końcowy komunikat to PASS: ... assertions. Liczba sprawdzeń na Linuksie różni się od 48 uzyskanych na Windows. Komunikat SKIPPED: Linux integration oznacza, że części linuksowej nie wykonano. W trakcie testu oczekiwany jest błąd drugiej instancji: test celowo próbuje uruchomić ją na tym samym archiwum.
+Na końcu powinno pojawić się `PASS: ... assertions`. Liczba sprawdzeń zależy od systemu. `SKIPPED: Linux integration` oznacza, że część linuksowa została pominięta. W trakcie testu zobaczysz też błąd uruchomienia drugiej instancji — to celowe sprawdzenie blokady archiwum.
 
-W razie AssertionError, Timeout lub błędu POSIX nie uruchamiaj jeszcze usługi na plikach uczniów; sprawdź komunikat i punkt 9.
+Jeśli test kończy się `AssertionError`, `Timeout` albo błędem POSIX, zajrzyj do punktu 9 i rozwiąż problem przed uruchomieniem programu na folderze uczniów.
 
-## 4. Jednorazowy test ręczny bez systemd
+## 4. Wypróbuj program w terminalu
 
-Ten test działa na oddzielnych danych i nie wymaga uprawnień root. W pierwszym terminalu, nadal w katalogu z build-linux, wykonaj:
+Możesz też zobaczyć działanie programu bez instalowania usługi. Przygotuj pusty folder próbny i uruchom program w pierwszym terminalu. Poniższy przykład korzysta z JAR-a zbudowanego w punkcie 2. Jeśli używasz paczki, zamień `build-linux/school-backup.jar` na `school-backup.jar`.
 
 ```bash
 umask 077
@@ -115,9 +120,9 @@ java -Dbackup.reserveMiB=0 -Dbackup.rescanSeconds=5 \
   "$TEST_ROOT/wymiana" "$TEST_ROOT/.archiwum" "$TEST_ROOT/.raporty" 5
 ```
 
-Zostaw proces uruchomiony. Parametr 0 wyłącza rezerwę wolnego miejsca wyłącznie na potrzeby tego małego testu; konfiguracja produkcyjna poniżej zachowuje 256 MiB.
+Zostaw ten terminal otwarty. Raport będzie odświeżany co 5 sekund. `backup.reserveMiB=0` wyłącza rezerwę miejsca na czas próby; w usłudze poniżej zostawiamy 256 MiB.
 
-W drugim terminalu tego samego użytkownika wstaw dokładny katalog wypisany przez pierwszy terminal:
+Otwórz drugi terminal na tym samym koncie. W pierwszej linii wstaw ścieżkę wypisaną przed uruchomieniem programu:
 
 ```bash
 TEST_ROOT='/var/tmp/school-backup-test.WSTAW_KONCOWKE'
@@ -133,24 +138,26 @@ stat -c '%a %U:%G %n' "$TEST_ROOT/.archiwum" "$TEST_ROOT/.raporty"
 stat -c '%a %U:%G %n' "$TEST_ROOT/.raporty/raport_dzienny.html"
 ```
 
-Oczekuj dwóch różnych plików kopii, zawierających odpowiednio pierwszą i drugą wersję. Katalogi prywatne mają mieć tryb 700, raport 600. Na obciążonym serwerze poczekaj dłużej i ponów samo sprawdzenie. Otwórz raport w przeglądarce administratora albo pobierz go z katalogu testowego przez SFTP.
+Powinny powstać dwie kopie: z pierwszą i z drugą treścią pliku. Katalogi archiwum i raportów powinny mieć uprawnienia `700`, a sam raport `600`. Jeśli serwer jest obciążony, daj mu więcej czasu i ponów sprawdzenie. Raport możesz otworzyć w przeglądarce administratora albo pobrać przez SFTP.
 
-Zatrzymaj proces przez Ctrl+C w pierwszym terminalu. Katalog testowy pozostaje do obejrzenia; możesz go później usunąć po sprawdzeniu jego dokładnej nazwy. Nie używaj do sprzątania ścieżek produkcyjnych.
+Gdy skończysz, naciśnij `Ctrl+C` w pierwszym terminalu. Folder próbny zostaje na dysku, więc możesz jeszcze obejrzeć jego zawartość i później go usunąć.
 
-## 5. Instalacja programu i uprawnienia produkcyjne
+## 5. Przygotuj foldery i uprawnienia
 
-Przykład zakłada istniejący folder wymiany:
+W tym przykładzie uczniowie korzystają z istniejącego folderu:
 
     /home/serwer/szkola_wymiana
 
-Docelowe prywatne katalogi:
+Kopie i raporty trafią obok, do prywatnych folderów:
 
     /home/serwer/.backup_archiwum
     /home/serwer/.raporty
 
-Wszystkie trzy katalogi muszą być rozłączne; archiwum i raporty nie mogą znajdować się wewnątrz folderu wymiany. Program odrzuca dowiązania symboliczne w ich ścieżkach. Jeżeli używasz innych lokalizacji, zmień je konsekwentnie w komendach oraz w RequiresMountsFor, ExecStart i ReadWritePaths jednostki systemd.
+Te trzy foldery muszą być osobne: żaden nie może znajdować się wewnątrz pozostałych. Ich ścieżki nie mogą zawierać dowiązań symbolicznych. Jeśli na Twoim serwerze są inne lokalizacje, zmień je również w `RequiresMountsFor`, `ExecStart` i `ReadWritePaths` w punkcie 6.
 
-Poniższe polecenia dotyczą nowej instalacji. Jeśli istnieje już usługa, zatrzymaj ją przed wymianą JAR. Jeśli istnieją archiwa innego właściciela, najpierw sprawdź ich zawartość i własność także podkatalogów; program nie przejmuje ich automatycznie.
+Jeśli korzystasz z gotowej paczki, możesz zamiast ręcznej instalacji z punktów 5–6 użyć `sudo bash install.sh`. Dla własnych folderów podaj po kolei wymianę, archiwum i raporty. Instalator wymaga nowych katalogów prywatnych i zatrzyma się, jeśli wykryje wcześniejszą instalację.
+
+Poniżej jest wariant ręczny dla nowej instalacji. W paczce zamień `build-linux/school-backup.jar` na `school-backup.jar`. Jeśli aktualizujesz działającą usługę, najpierw ją zatrzymaj. Przy istniejącym archiwum sprawdź też właścicieli jego podkatalogów.
 
 ```bash
 sudo test -d /home/serwer/szkola_wymiana || exit 1
@@ -167,15 +174,15 @@ df -h /home/serwer/szkola_wymiana /home/serwer/.backup_archiwum
 /usr/bin/java -version
 ```
 
-Oczekiwany właściciel prywatnych katalogów to root:root, tryb 700. Program tworzy kopie i raporty z trybem 600. Nie wykonuj chmod -R ani chown -R na folderze wymiany — zachowaj istniejące prawa uczniów i konfigurację Samby/SFTP. Jeśli folder wymiany nie istnieje, utwórz i skonfiguruj go wcześniej zgodnie z zasadami kont szkolnych.
+Prywatne foldery powinny należeć do `root:root` i mieć uprawnienia `700`. Program zapisuje kopie i raporty z uprawnieniami `600`. Zostaw dotychczasowe uprawnienia folderu wymiany; rekurencyjne `chmod` lub `chown` mogłoby odebrać uczniom dostęp. Jeśli folderu wymiany jeszcze nie ma, najpierw skonfiguruj go dla kont szkolnych.
 
-Udostępniaj uczniom sam folder szkola_wymiana, nie całe /home/serwer. Archiwum i raporty powinny też pozostawać poza katalogiem dostępnym przez ich SFTP/chroot. Kropka w nazwie nie jest zabezpieczeniem dostępu; 700 blokuje wejście do katalogu, ale nie musi ukrywać jego nazwy przy dostępie do katalogu nadrzędnego.
+Udział Samby powinien wskazywać na `szkola_wymiana`. Archiwum i raporty zostaw poza udziałami uczniów i ich katalogiem SFTP/chroot. Sama kropka w nazwie nie chroni danych. Uprawnienia `700` blokują wejście do katalogu, choć jego nazwa może być widoczna z katalogu nadrzędnego.
 
-Wariant poniżej uruchamia proces jako root z ograniczonym zestawem capabilities. Jest to potrzebne do odczytu plików różnych właścicieli i przywracania ich atime. Samo przyznanie osobnemu użytkownikowi prawa odczytu przez ACL nie daje prawa ustawiania dowolnego atime cudzych plików; opisuje to [utimensat](https://man7.org/linux/man-pages/man2/utimensat.2.html).
+Usługa poniżej działa jako root z ograniczonymi uprawnieniami systemowymi. Dzięki temu może odczytywać pliki różnych właścicieli i przywracać ich czas dostępu (`atime`). Samo prawo odczytu przez ACL nie wystarcza do ustawiania tego czasu w cudzych plikach — szczegóły są w [opisie utimensat](https://man7.org/linux/man-pages/man2/utimensat.2.html).
 
-## 6. Usługa systemd
+## 6. Uruchom jako usługę systemd
 
-Poniższy blok tworzy plik /etc/systemd/system/school-backup.service. Jeśli taki plik już istnieje i zawiera lokalne ustawienia, porównaj go przed zastąpieniem.
+Wklej poniższy blok, żeby utworzyć `/etc/systemd/system/school-backup.service`. Jeśli ten plik już istnieje, najpierw porównaj ustawienia, żeby nie stracić lokalnych zmian.
 
 ```bash
 sudo tee /etc/systemd/system/school-backup.service > /dev/null <<'EOF'
@@ -217,9 +224,9 @@ sudo chmod 0644 /etc/systemd/system/school-backup.service
 sudo systemd-analyze verify /etc/systemd/system/school-backup.service
 ```
 
-Nie dodawaj MemoryDenyWriteExecute=true bez sprawdzenia zgodności z JVM/JIT. Folder wymiany jest na liście ReadWritePaths, ponieważ przywracanie atime wymaga zapisu metadanych. ProtectHome=false jest celowe dla ścieżek w /home; resztę systemu ogranicza ProtectSystem=strict. Te mechanizmy opisuje [systemd.exec](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html).
+`ReadWritePaths` pozwala zmieniać także metadane folderu wymiany — to potrzebne do przywracania `atime`. `ProtectHome=false` umożliwia dostęp do ścieżek w `/home`, a `ProtectSystem=strict` ogranicza zapis w pozostałej części systemu. Nie dodawaj `MemoryDenyWriteExecute=true` bez sprawdzenia JVM, bo może to przeszkadzać kompilatorowi JIT. Opisy tych ustawień znajdziesz w [systemd.exec](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html).
 
-Jeżeli weryfikacja jednostki zgłasza nieznaną opcję lub brak pliku wykonywalnego, popraw konfigurację przed startem. Następnie uruchom usługę jeszcze bez włączania autostartu:
+Jeśli `systemd-analyze verify` zgłosi błąd, popraw wskazaną opcję lub ścieżkę. Potem uruchom usługę i sprawdź logi:
 
 ```bash
 sudo systemctl daemon-reload
@@ -228,24 +235,26 @@ sudo systemctl status school-backup.service --no-pager
 sudo journalctl -u school-backup.service -n 80 --no-pager
 ```
 
-Prześlij przez rzeczywiste SMB/SFTP mały plik kontrolny. Poczekaj na jego kopię, zmień zawartość i sprawdź drugą wersję. Następnie usuń tylko kontrolny plik źródłowy i sprawdź, że obie kopie pozostały. Użyj konta ucznia także do potwierdzenia braku dostępu do archiwum. Sam stan active (running) nie potwierdza, że wszystkie pliki dają się skopiować.
+Teraz sprawdź działanie przez SMB lub SFTP, tak jak robią to uczniowie. Prześlij mały plik, poczekaj na kopię, zmień jego treść i sprawdź drugą wersję. Usuń próbny plik z wymiany i upewnij się, że kopie zostały. Sprawdź też z konta ucznia, czy archiwum jest niedostępne. Sam komunikat `active (running)` mówi tylko, że proces działa.
 
-Po pomyślnym teście włącz start po restarcie serwera:
+Jeśli wszystko się zgadza, włącz uruchamianie po restarcie serwera:
 
 ```bash
 sudo systemctl enable school-backup.service
 sudo systemctl is-enabled school-backup.service
 ```
 
-Restart=on-failure wznawia proces po awarii, ale nie naprawia każdego błędu obsłużonego wewnątrz działającego programu: [systemd.service](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html).
+`Restart=on-failure` uruchomi proces ponownie po awarii. Gdy program nadal działa, ale zgłasza np. brak miejsca, trzeba rozwiązać przyczynę błędu. Zachowanie restartów opisuje [systemd.service](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html).
 
-## 7. Obsługa i raport
+## 7. Logi, raport i zatrzymywanie
+
+Logi na żywo:
 
 ```bash
 sudo journalctl -u school-backup.service -f
 ```
 
-Ctrl+C kończy podgląd logów, nie zatrzymuje usługi. Pozostałe polecenia wykonuj osobno, zgodnie z potrzebą:
+`Ctrl+C` zamyka podgląd logów; usługa dalej pracuje. Poniższe polecenia służą kolejno do restartu, zatrzymania oraz zatrzymania z wyłączeniem autostartu. Wybierz to, którego potrzebujesz:
 
 ```bash
 sudo systemctl restart school-backup.service
@@ -259,53 +268,55 @@ sudo systemctl stop school-backup.service
 sudo systemctl disable --now school-backup.service
 ```
 
-Raport produkcyjny:
+Raport znajdziesz tutaj:
 
     /home/serwer/.raporty/raport_dzienny.html
 
-Pierwszy raport powstaje po uruchomieniu; może jeszcze nie obejmować wszystkich oczekujących kopii. Kolejne powstają po interwale od zakończenia poprzedniego raportu. Wartość 3600 oznacza około godzinę; 86400 oznacza około dobę, nie konkretną godzinę kalendarzową. Po zmianie jednostki wykonaj daemon-reload i restart.
+Pierwszy raport powstaje zaraz po starcie, więc część kopii może jeszcze czekać w kolejce. Domyślnie kolejny raport jest tworzony godzinę po zakończeniu poprzedniego. Ostatnia liczba w `ExecStart` to odstęp w sekundach: `3600` oznacza godzinę, a `86400` dobę. To odstęp między raportami, nie ustalona godzina dnia. Po edycji pliku usługi wykonaj `daemon-reload` i restart.
 
-Kontrola plików z poziomu administratora:
+Uprawnienia raportu i listę kopii sprawdzisz tak:
 
 ```bash
 sudo stat -c '%a %U:%G %n' /home/serwer/.raporty/raport_dzienny.html
 sudo find /home/serwer/.backup_archiwum/.snapshots -type f -printf '%m %p\n'
 ```
 
-Nie publikuj raportu przez udział uczniów ani publiczny serwer WWW. Konta uczniów nie powinny mieć dostępu do sudo ani uprawnień odczytu dziennika systemowego.
+Raport zostaw do użytku administratora, poza udziałami uczniów i publicznym WWW. Dostęp do `sudo` i dziennika systemowego też powinien być ograniczony do uprawnionych kont.
 
-## 8. Zachowanie tej wersji programu
+## 8. O czym pamiętać
 
-- Kopia powstaje po wyciszeniu zdarzeń i dwóch zgodnych pomiarach metadanych: zwykle po około 2 sekundach spokoju, czasem później. Dłuższa przerwa w przesyłaniu może pozostawić także kopię częściowej wersji. To nie jest protokół potwierdzający zakończenie uploadu.
-- Każdy restart tworzy ponownie kopie bieżących plików, ponieważ pamięć ostatnio zapisanych wersji nie jest utrwalana. Stare kopie pozostają.
-- Program nie ma automatycznej retencji. Archiwum rośnie; po wyczerpaniu rezerwy miejsca nowe kopie są ponawiane i zgłaszane w logach. Nie traktuj 256 MiB jako gwarancji ochrony całego dysku przed zapełnieniem.
-- Przywracane jest atime, a nie ctime ani historia audytu Samby/SFTP. Nie ma gwarancji całkowitej niewykrywalności działania.
-- Dowiązania symboliczne są pomijane; maksymalna głębokość katalogów wymiany wynosi 128.
-- Szybkie, kolejne zapisy mogą zostać połączone w jedną ustabilizowaną wersję. Program nie gwarantuje zachowania każdego pośredniego zapisu ani spójnego obrazu całego katalogu w jednym momencie.
-- Kopia na tym samym fizycznym dysku nie chroni przed jego awarią. Wdrożenie warto uzupełnić odrębną kopią na innym nośniku/serwerze.
+- Program zwykle czeka około 2 sekund od ostatniej zmiany, zanim zrobi kopię. Jeśli przesyłanie zatrzyma się na dłużej, może zapisać także niepełną wersję pliku.
+- Po każdym restarcie ponownie kopiuje bieżące pliki. Informacje o ostatnich kopiach trzyma w pamięci, a wcześniejszych wersji nie usuwa.
+- Archiwum rośnie bez automatycznego usuwania starych kopii. Gdy brakuje miejsca na kopię i rezerwę, program ponawia próby i zapisuje błędy w logach. Rezerwa 256 MiB nie zastępuje kontroli wolnego miejsca na całym dysku.
+- Przywracanie czasu dostępu `atime` nie usuwa zmian `ctime` ani zapisów audytu SMB/SFTP. Nie oznacza całkowitego ukrycia działania programu.
+- Dowiązania symboliczne są pomijane. Obsługiwana głębokość folderów wymiany to maksymalnie 128 poziomów.
+- Kilka szybkich zapisów może dać jedną kopię końcowej wersji. Nie jest to zapis każdej operacji ani jednoczesny obraz wszystkich plików w katalogu.
+- Kopie na tym samym dysku nie pomogą przy jego awarii. Ważne dane przechowuj również na innym nośniku lub serwerze.
 
-## 9. Diagnostyka
+W tym projekcie sprawdzono kompilację dla Javy 17 i 48 sprawdzeń na Windows. Testów integracyjnych Linuksa ani usługi systemd nie wykonano w tym środowisku. Przed użyciem na szkolnych plikach uruchom testy na swoim serwerze i sprawdź prawdziwy udział SMB/SFTP.
 
-Brak SecureDirectoryStream / POSIX: sprawdź system plików i używaną JVM. Nie zakładaj, że udział CIFS, FAT lub dowolny system FUSE ma wymagane właściwości.
+## 9. Jeśli coś nie działa
 
-Permission denied lub brak przywrócenia atime: sprawdź User, właścicieli katalogów, ReadWritePaths oraz capabilities. Na systemie z SELinux/AppArmor sprawdź także odmowy w dzienniku; nie wyłączaj całej ochrony systemu jako pierwszej naprawy.
+**Brak SecureDirectoryStream lub POSIX.** Sprawdź system plików i używaną Javę. CIFS, FAT i niektóre systemy FUSE mogą nie zapewniać wymaganych możliwości.
 
-Nieprawidłowy właściciel prywatnego katalogu: sprawdź stat także dla .snapshots, .staging i istniejących podkatalogów archiwum. Przeniesienie instalacji między kontami wymaga świadomej zmiany własności prywatnego archiwum po zatrzymaniu procesu.
+**Permission denied albo problem z atime.** Sprawdź użytkownika usługi, właścicieli katalogów, `ReadWritePaths` i `CapabilityBoundingSet`. Jeśli serwer ma SELinux lub AppArmor, poszukaj w dzienniku informacji o zablokowanym dostępie, zanim zmienisz reguły ochrony.
 
-Inna instancja już korzysta z archiwum: zakończ wcześniejszy proces lub test. Nie usuwaj .daemon.lock podczas działania usługi; blokada jest związana z otwartym plikiem.
+**Nieprawidłowy właściciel prywatnego katalogu.** Sprawdź `stat` także dla `.snapshots`, `.staging` i podkatalogów archiwum. Jeśli przenosisz instalację na inne konto, zatrzymaj program przed zmianą właściciela tych danych.
 
-Przekroczony limit inotify / brak rejestracji katalogów:
+**Inna instancja korzysta z archiwum.** Sprawdź, czy wcześniejszy test lub usługa nadal pracuje, i zakończ ten proces. Usuwanie `.daemon.lock` w trakcie pracy może zepsuć ochronę przed równoczesnym uruchomieniem dwóch instancji.
+
+**Brakuje obserwatorów inotify.** Sprawdź limity i ostatnie błędy:
 
 ```bash
 sysctl fs.inotify.max_user_watches fs.inotify.max_user_instances fs.inotify.max_queued_events
 sudo journalctl -u school-backup.service -n 100 --no-pager
 ```
 
-Jeden obserwator przypada na katalog; limit jest współdzielony przez procesy danego UID. Dopiero po potwierdzeniu problemu dobierz większe limity do liczby katalogów i pamięci serwera. Program okresowo skanuje wymianę także po utracie zdarzeń, ale nie odtworzy treści wersji, która już została nadpisana.
+Program potrzebuje jednego obserwatora na katalog, a limit jest wspólny dla procesów danego użytkownika. Jeśli to przyczyna błędu, dobierz większy limit do liczby folderów i dostępnej pamięci. Okresowe skanowanie pomaga po zgubionych zdarzeniach, ale nie odzyska wersji już nadpisanej przez ucznia.
 
-Katalog wymiany został podmieniony: po usunięciu i utworzeniu od nowa głównego katalogu trzeba zrestartować usługę. Nie wystarczy, że nowy katalog ma tę samą nazwę.
+**Katalog wymiany został podmieniony.** Jeśli główny folder usunięto i utworzono od nowa, zrestartuj usługę. Nowy folder z tą samą nazwą jest dla systemu innym katalogiem.
 
-Start request repeated too quickly: po usunięciu przyczyny błędu:
+**Start request repeated too quickly.** Najpierw usuń przyczynę błędu, a potem wyzeruj licznik nieudanych startów:
 
 ```bash
 sudo systemctl reset-failed school-backup.service
@@ -313,4 +324,4 @@ sudo systemctl start school-backup.service
 sudo journalctl -u school-backup.service -n 80 --no-pager
 ```
 
-Weryfikacja wdrożenia kończy się dopiero po udanym teście na docelowym systemie plików i przez używany przez uczniów protokół SMB/SFTP. Test lokalny w katalogu tymczasowym nie potwierdza wszystkich uprawnień i reguł produkcyjnego udziału.
+Jeśli test w folderze tymczasowym przechodzi, a na udziale szkolnym nadal są problemy, sprawdź uprawnienia i ustawienia tego udziału. Próba lokalna nie obejmuje reguł Samby ani SFTP.
